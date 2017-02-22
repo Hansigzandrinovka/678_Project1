@@ -133,7 +133,9 @@ void run_export(ExportCommand cmd) {
 
   // TODO: Implement export.
   // HINT: This should be quite simple.
-  IMPLEMENT_ME();
+  //IMPLEMENT_ME();
+
+  //
 }
 
 // Changes the current working directory
@@ -243,7 +245,7 @@ void child_run_command(Command cmd) {
   case KILL:
   case EXIT:
   case EOC:
-    break;
+    break; //on non-child-run command, just return
 
   default:
     fprintf(stderr, "Unknown command type: %d\n", type);
@@ -323,16 +325,49 @@ void create_process(CommandHolder holder) {
   //set up pipe, if p_in, then redirect input to it, if p_out, redirect output to it
 	//ie int pipeline[2]; pipe(pipeline); if(!p_in), close p_in, else redirect std_in to p_in 
 
+  //ASSUME CommandHolders are read in order that holders A and B that A outputs through pipe to B, means A is read before B
+  if(pipe_create_process != NULL) //if there is an old pipe to use
+  {
+      close(pipe_create_process[1]); //we will not be writing to the old pipe
+  }
 
   //if cmd changes quash state, only run in parent
+  if(p_in) //if we are reading from (old) pipe, dup2 the input into this
+  {
+      dup2(STDIN_FILENO,pipe_create_process[0]); //push output from pipe as input to this process
+  }
+  else //just in case we need to close child processes, we will close and deref right on the spot if not using it
+  {
+      //TODO: close output, delete pipe_create_process
+  }
+
+  if(p_out) //if we are writing to a new pipe, create then dup2 the input into this
+  {
+      pipe(pipe_create_process); //create a new pipe replacing addresses of old pipe
+      dup2(STDOUT_FILENO,pipe_create_process[1]);
+  }
 	
 
   // TODO: Setup pipes, redirects, and new process
+  //if(p_in) //if we need to create a new pipe, overwrite the pipe pointer
   IMPLEMENT_ME();
 
-  parent_run_command(holder.cmd); // This should be done in the parent branch of
+  if(fork() == 0) //this is child
+  {
+	//if is EXPORT, CD, KILL then
+	child_run_command(holder.cmd); // This should be done in the child branch of a fork
+  }
+  else
+  {
+	//IF is GENERIC, ECHO, PWD, JOBS, then
+	parent_run_command(holder.cmd); // This should be done in the parent branch of
                                   // a fork
-  child_run_command(holder.cmd); // This should be done in the child branch of a fork
+  }
+
+  //printf("pipe closing begins!\n"); //TODO: test, then remove this line
+ if(p_out) //if we created a new pipe before, we need to close it's output to show we're done writing to it
+     close(pipe_create_process[1]);
+ //if p_in -> close pipecreateprocess[0]
 }
 
 // Run a list of commands
