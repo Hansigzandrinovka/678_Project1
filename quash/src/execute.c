@@ -111,6 +111,7 @@ void run_echo(EchoCommand cmd) {
   // string is always NULL) list of strings.
   char** str = cmd.args;
   int i = 0;
+  while(cmd.args[i]!=NULL){
 	  printf(cmd.args[i]);
 	  i++;
   }
