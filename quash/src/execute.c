@@ -110,12 +110,15 @@ void run_echo(EchoCommand cmd) {
   // Print an array of strings. The args array is a NULL terminated (last
   // string is always NULL) list of strings.
   char** str = cmd.args;
-
+  int i = 0;
+	  printf(cmd.args[i]);
+	  i++;
+  }
   // TODO: Remove warning silencers
-  (void) str; // Silence unused variable warning
+  //(void) str; // Silence unused variable warning
 
   // TODO: Implement echo
-  IMPLEMENT_ME();
+  //IMPLEMENT_ME();
 
   // Flush the buffer before returning
   fflush(stdout);
