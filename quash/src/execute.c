@@ -315,31 +315,26 @@ void create_process(CommandHolder holder) {
   bool r_out = holder.flags & REDIRECT_OUT;
   bool r_app = holder.flags & REDIRECT_APPEND; // This can only be true if r_out
                                                // is true
+  int old_input_id = 0; //only used if p_in is true, tracks ID of input end of old pipe so we can close it when done
+											 
 
-  // TODO: Remove warning silencers
-  (void) p_in;  // Silence unused variable warning
-  (void) p_out; // Silence unused variable warning
-  (void) r_in;  // Silence unused variable warning
-  (void) r_out; // Silence unused variable warning
-  (void) r_app; // Silence unused variable warning
-  //set up pipe, if p_in, then redirect input to it, if p_out, redirect output to it
-	//ie int pipeline[2]; pipe(pipeline); if(!p_in), close p_in, else redirect std_in to p_in 
-
-  //ASSUME CommandHolders are read in order that holders A and B that A outputs through pipe to B, means A is read before B
+  //use previous created process' pipe if needed
   if(pipe_create_process != NULL) //if there is an old pipe to use
   {
       close(pipe_create_process[1]); //we will not be writing to the old pipe
   }
-
-  //if cmd changes quash state, only run in parent
-  if(p_in) //if we are reading from (old) pipe, dup2 the input into this
+  if(p_in) //if we are reading from (old) pipe, dup2 the input into this and keep a reference around
   {
       dup2(STDIN_FILENO,pipe_create_process[0]); //push output from pipe as input to this process
+	  old_input_id = pipe_create_process[0]; //used to close pipe later
   }
-  else //just in case we need to close child processes, we will close and deref right on the spot if not using it
+  else //just in case we need to close child processes, we will close it right on the spot if not using it
   {
-      //TODO: close output, delete pipe_create_process
+	  close(pipe_create_process[0]);
   }
+  //now we want to forget all about old pipline in case we need to create a new one
+  free(pipe_create_process); //remove memory allocation for it (since we)
+  pipe_create_process = NULL;
 
   if(p_out) //if we are writing to a new pipe, create then dup2 the input into this
   {
@@ -350,7 +345,7 @@ void create_process(CommandHolder holder) {
 
   // TODO: Setup pipes, redirects, and new process
   //if(p_in) //if we need to create a new pipe, overwrite the pipe pointer
-  IMPLEMENT_ME();
+  //IMPLEMENT_ME();
 
   if(fork() == 0) //this is child
   {
@@ -359,14 +354,17 @@ void create_process(CommandHolder holder) {
   }
   else
   {
+	  //if cmd changes quash state, only run in parent
 	//IF is GENERIC, ECHO, PWD, JOBS, then
 	parent_run_command(holder.cmd); // This should be done in the parent branch of
                                   // a fork
   }
 
   //printf("pipe closing begins!\n"); //TODO: test, then remove this line
- if(p_out) //if we created a new pipe before, we need to close it's output to show we're done writing to it
+  if(p_out) //if we created a new pipe before, we need to close it's output to show we're done writing to it
      close(pipe_create_process[1]);
+  if(p_in) //if we are using a previously generated pipe, we need to close input to pipe before stopping
+	 close(old_input_id);
  //if p_in -> close pipecreateprocess[0]
 }
 
