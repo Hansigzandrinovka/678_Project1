@@ -20,6 +20,11 @@
 #define IMPLEMENT_ME()                                                  \
   fprintf(stderr, "IMPLEMENT ME: %s(line %d): %s()\n", __FILE__, __LINE__, __FUNCTION__)
 
+//declare static variables
+static int pipes_c_p[2][2]; //two pipes: pipes for input to and output from current (or last used) process. 0 end is output from pipe, 1 is input to pipe
+static int write_to_pipe_index_c_p = 1; //indicates the index of the pipe the current (or next using) process will write to (if p_out is true), alternates between 0 and 1
+static int read_from_pipe_index_c_p = 0; //indicates the index of the pipe the current (or next using) process will read from if p_in is true, alternates between 0 and 1
+
 /***************************************************************************
  * Interface Functions
  ***************************************************************************/
@@ -27,14 +32,9 @@
 // Return a string containing the current working directory.
 char* get_current_directory(bool* should_free) {
 
-  //by default called by Quash on start, but not printed
-
-//debug output
-  //char* current_dir = get_current_dir_name();
-  //printf(current_dir);
-
   // Change this to true if necessary
-  *should_free = false; //for memory leak issues
+  //because we used get_current_dir_name, which requires memory to be freed, we notify caller to do this
+  *should_free = true; //for memory leak issues
 
 //don't use system variable for current directory directly, but can grab system call to it
   return get_current_dir_name();
@@ -58,7 +58,7 @@ void check_jobs_bg_status() {
   // TODO: Check on the statuses of all processes belonging to all background
   // jobs. This function should remove jobs from the jobs queue once all
   // processes belonging to a job have completed.
-  IMPLEMENT_ME();
+  //IMPLEMENT_ME();
 
   // TODO: Once jobs are implemented, uncomment and fill the following line
   // print_job_bg_complete(job_id, pid, cmd);
@@ -95,9 +95,9 @@ void run_generic(GenericCommand cmd) {
   char* exec = cmd.args[0];
   char** args = cmd.args;
 
-  
+
   execvp(exec,args);
-  
+
   // TODO: Remove warning silencers
   //(void) exec; // Silence unused variable warning
   //(void) args; // Silence unused variable warning
@@ -125,7 +125,7 @@ void run_echo(EchoCommand cmd) {
   //IMPLEMENT_ME();
 
   // Flush the buffer before returning
-  fflush(stdout);
+  //fflush(stdout);
 }
 
 // Sets an environment variable
@@ -153,10 +153,15 @@ void run_cd(CDCommand cmd) {
   // Check if the directory is valid
   if (dir == NULL) {
     perror("ERROR: Failed to resolve path");
+
     return;
   }
-  /*TODO: remove this later*/else
-    printf("New Directory will be %s",dir); 
+  printf("%s\n",dir);
+  
+  char* old_pwd; //read old directory
+  old_pwd = get_current_dir_name();
+  printf("old pwd was: %s",old_pwd);
+  printf("PWD will be: %s",dir);
 
   int chdir_err_no = chdir(dir);
 
@@ -166,9 +171,8 @@ void run_cd(CDCommand cmd) {
   // TODO: Update the PWD environment variable to be the new current working
   // directory and optionally update OLD_PWD environment variable to be the old
   // working directory.
-  char* old_pwd; //read old directory
-  old_pwd = get_current_dir_name();
   
+
   setenv("OLD_PWD",old_pwd,1); //forces old PWD value to be current PWD value (before we change current PWD)
   free(old_pwd); //free as required by get_current_dir_name
   setenv("PWD",dir,1); //forces PWD value to be new directory (PWD now points to the just-changed-to directory)
@@ -195,7 +199,7 @@ void run_pwd() {
   // TODO: Print the current working directory
   char* fetched_cur_dir;
   fetched_cur_dir = get_current_dir_name(); //get current directory and print to console
-  printf(fetched_cur_dir);
+  printf("%s\n",fetched_cur_dir);
 
   free(fetched_cur_dir); //do we need to allocate/free string? - Yes, it says so in get_current_dir_name docs
 
@@ -315,64 +319,50 @@ void parent_run_command(Command cmd) {
  * @sa Command CommandHolder
  */
 void create_process(CommandHolder holder) {
-  // Read the flags field from the parser
-  bool p_in  = holder.flags & PIPE_IN; //tells us if this process reads from a pipe
-  bool p_out = holder.flags & PIPE_OUT; //tells us if this process writes to a pipe
-  bool r_in  = holder.flags & REDIRECT_IN; //tells us if output from another process redirects into this process's input
-  bool r_out = holder.flags & REDIRECT_OUT;
-  bool r_app = holder.flags & REDIRECT_APPEND; // This can only be true if r_out
-                                               // is true
-  int old_input_id = 0; //only used if p_in is true, tracks ID of input end of old pipe so we can close it when done
-											 
+	bool p_in  = holder.flags & PIPE_IN; //tells us if this process reads from a pipe
+	bool p_out = holder.flags & PIPE_OUT; //tells us if this process writes to a pipe
+	bool r_in  = holder.flags & REDIRECT_IN; //tells us if output from another process redirects into this process's input
+	bool r_out = holder.flags & REDIRECT_OUT;
+	bool r_app = holder.flags & REDIRECT_APPEND; // This can only be true if r_out
+													// is true
+	  // TODO: Setup pipes, redirects and new process
 
-  //use previous created process' pipe if needed
-  if(pipe_create_process != NULL) //if there is an old pipe to use
-  {
-      close(pipe_create_process[1]); //we will not be writing to the old pipe
-  }
-  if(p_in) //if we are reading from (old) pipe, dup2 the input into this and keep a reference around
-  {
-      dup2(STDIN_FILENO,pipe_create_process[0]); //push output from pipe as input to this process
-	  old_input_id = pipe_create_process[0]; //used to close pipe later
-  }
-  else //just in case we need to close child processes, we will close it right on the spot if not using it
-  {
-	  close(pipe_create_process[0]);
-  }
-  //now we want to forget all about old pipline in case we need to create a new one
-  free(pipe_create_process); //remove memory allocation for it (since we)
-  pipe_create_process = NULL;
+	if (p_out) { //we need to create a new pipe to write info to (in child process)
+		pipe (pipes_c_p[write_to_pipe_index_c_p]);
+	}
 
-  if(p_out) //if we are writing to a new pipe, create then dup2 the input into this
-  {
-      pipe(pipe_create_process); //create a new pipe replacing addresses of old pipe
-      dup2(STDOUT_FILENO,pipe_create_process[1]);
-  }
-	
+	//the actual RUN-COMMAND part
+	if(fork() == 0) //this is child
+	{
+		  //child closes/uses pipes
+		  if(p_in != 0) //if we need to read old pipe
+		  {
+			  dup2(pipes_c_p[read_from_pipe_index_c_p][0],STDIN_FILENO);
+			  //for the current read pipe: forward terminal input requests to read from the output of pipe
+			  close(pipes_c_p[read_from_pipe_index_c_p][1]); //we won't be writing to old read-pipe
+		  }
 
-  // TODO: Setup pipes, redirects, and new process
-  //if(p_in) //if we need to create a new pipe, overwrite the pipe pointer
-  //IMPLEMENT_ME();
+		  if(p_out != 0) //if we need to write to new pipe
+		  {
+			  dup2(pipes_c_p[write_to_pipe_index_c_p][1],STDOUT_FILENO); //redirect process output to write to input of pipe
+		  }
+			//if is EXPORT, CD, KILL then
+		child_run_command(holder.cmd); // This should be done in the child branch of a fork
+	}
+	else
+	{
+		//we created pipes we won't be using, time to close them
+		if(p_out != 0) //if we created an output pipe earlier, close it so it doesn't stall
+			close(pipes_c_p[write_to_pipe_index_c_p][1]); //we won't be writing to this pipe in parent
+		//IF is GENERIC, ECHO, PWD, JOBS, then
 
-  if(fork() == 0) //this is child
-  {
-	//if is EXPORT, CD, KILL then
-	child_run_command(holder.cmd); // This should be done in the child branch of a fork
-  }
-  else
-  {
-	  //if cmd changes quash state, only run in parent
-	//IF is GENERIC, ECHO, PWD, JOBS, then
-	parent_run_command(holder.cmd); // This should be done in the parent branch of
-                                  // a fork
-  }
+		//swap the pipes: THE FIRST IS THE LAST AND THE LAST THE FIRST
+		read_from_pipe_index_c_p = (read_from_pipe_index_c_p + 1) % 2; //basically, alternate between 0 and 1
+		write_to_pipe_index_c_p = (write_to_pipe_index_c_p + 1) % 2; //^^^^^^^^
 
-  //printf("pipe closing begins!\n"); //TODO: test, then remove this line
-  if(p_out) //if we created a new pipe before, we need to close it's output to show we're done writing to it
-     close(pipe_create_process[1]);
-  if(p_in) //if we are using a previously generated pipe, we need to close input to pipe before stopping
-	 close(old_input_id);
- //if p_in -> close pipecreateprocess[0]
+		parent_run_command(holder.cmd); // This should be done in the parent branch of
+										  // a fork
+	}
 }
 
 // Run a list of commands
@@ -397,12 +387,12 @@ void run_script(CommandHolder* holders) {
   if (!(holders[0].flags & BACKGROUND)) {
     // Not a background Job
     // TODO: Wait for all processes under the job to complete
-    IMPLEMENT_ME();
+    //IMPLEMENT_ME();
   }
   else {
     // A background job.
     // TODO: Push the new job to the job queue
-    IMPLEMENT_ME();
+    //IMPLEMENT_ME();
 
     // TODO: Once jobs are implemented, uncomment and fill the following line
     // print_job_bg_start(job_id, pid, cmd);

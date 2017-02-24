@@ -162,6 +162,5 @@ void run_jobs();
  */
 void run_script(CommandHolder* holders);
 
-int* pipe_create_process; //for any given created process, this pipe represents either the input pipe to the process, or (after input pipe configuration and after output pipe creation) the output pipe from the process
 
 #endif
