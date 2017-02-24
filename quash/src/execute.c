@@ -168,7 +168,8 @@ void run_cd(CDCommand cmd) {
 		perror("ERROR: Failed to resolve path");
 		return;
 	}
-
+    char* old_pwd; //read old directory
+	old_pwd = get_current_dir_name();
 	int chdir_err_no = chdir(dir);
 
 	if(chdir_err_no != 0) //something went wrong
@@ -177,13 +178,12 @@ void run_cd(CDCommand cmd) {
 	// TODO: Update the PWD environment variable to be the new current working
 	// directory and optionally update OLD_PWD environment variable to be the old
 	// working directory.
-	char* old_pwd; //read old directory
-	old_pwd = get_current_dir_name();
-
-	setenv("OLD_PWD",old_pwd,1); //forces old PWD value to be current PWD value (before we change current PWD)
-	free(old_pwd); //free as required by get_current_dir_name
+	
 	setenv("PWD",dir,1); //forces PWD value to be new directory (PWD now points to the just-changed-to directory)
+	setenv("OLD_PWD",old_pwd,1); //forces old PWD value to be current PWD value (before we change current PWD)
+	
 
+    free(old_pwd); //free as required by get_current_dir_name
 	//IMPLEMENT_ME();
 }
 
@@ -207,7 +207,7 @@ void run_pwd() {
 	char* fetched_cur_dir;
 	fetched_cur_dir = get_current_dir_name(); //get current directory and print to console
 	printf(fetched_cur_dir);
-
+    printf("\n");
 	free(fetched_cur_dir); //do we need to allocate/free string? - Yes, it says so in get_current_dir_name docs
 
 	// Flush the buffer before returning
@@ -394,6 +394,7 @@ void create_process(CommandHolder holder) {
 		}
 		//if is EXPORT, CD, KILL then
 		child_run_command(holder.cmd); // if possible, run the child component of command
+		exit(0);
 	}
 	else
 	{
