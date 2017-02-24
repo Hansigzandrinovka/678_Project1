@@ -13,6 +13,8 @@
 #include <fcntl.h> //used for accessing constants associated with open(file id, ALL_IMPORTANT_PARAMETER_FLAGS);
 
 #include "quash.h"
+#include "Job_Queue.h"
+#include "deque.h" //for the dequeue methods that Job queue will use
 #include "pid_queue.h" //used to store Process IDs
 
 // Remove this and all expansion calls to it
@@ -22,18 +24,14 @@
 #define IMPLEMENT_ME()                                                  \
 	fprintf(stderr, "IMPLEMENT ME: %s(line %d): %s()\n", __FILE__, __LINE__, __FUNCTION__)
 
-struct Job{
-	int job_id; //used to identify current job. When added to background queue, assigned id of 1 + id of last job on queue
-	int is_background_job; //int representation of boolean
-	pid_queue process_queue; //the processes running as part of the job (either foreground, so wait to finish... or background, so monitor them)
-};
 
 //declare static variables
 static int pipes_c_p[2][2]; //two pipes: pipes for input to and output from current (or last used) process. 0 end is output from pipe, 1 is input to pipe
 static int write_to_pipe_index_c_p = 1; //indicates the index of the pipe the current (or next using) process will write to (if p_out is true), alternates between 0 and 1
 static int read_from_pipe_index_c_p = 0; //indicates the index of the pipe the current (or next using) process will read from if p_in is true, alternates between 0 and 1
-//static pid_queue foreground_process_id_queue; //holds process IDs for each foreground process
-///static pid_queue background_process_id_queue; //^^^^^^^^^^^^^^^^^^^^^^^^^^ background process
+static Job last_created_job; //the job last created by the run_script process
+static Job_Queue background_jobs; //the jobs currently running on the job queue
+static int bk_jobs_initialized = 0; //represents if the background job queue has been initialized
 
 /***************************************************************************
  * Interface Functions
@@ -367,7 +365,7 @@ void create_process(CommandHolder holder) {
 	}
 	pid_t current_id = fork();
 	
-	push_front_pid_queue(&foreground_process_id_queue, current_id);
+	//push_front_pid_queue(&foreground_process_id_queue, current_id);
 	printf("pushing process %ld to the queue",(long)current_id);
 
 	//the actual RUN-COMMAND part
@@ -426,7 +424,8 @@ void run_script(CommandHolder* holders) {
 		return;
 
 	//TODO: create the Job associated with the current script execution
-	
+	if(bk_jobs_initialized == 0) //if we haven't initalized job queue yet
+		background_jobs = new_Job_Queue(1); //creates a new Job with a new Queue. This job defaults to ID 0, foreground job, with new queue
 	//foreground_process_id_queue = new_pid_queue (1); //define forground process queue to read from
 
 	check_jobs_bg_status();

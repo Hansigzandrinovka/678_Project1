@@ -1,5 +1,5 @@
 /*
- * FILE		: int_queue.h
+ * FILE		: pid_queue.h
  *
  * BRIEF	: Generates declarations for deque data structure to store
  * 		  various integers, including Job ID and Process ID
