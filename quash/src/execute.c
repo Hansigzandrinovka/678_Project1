@@ -335,9 +335,13 @@ void create_process(CommandHolder holder) {
 	}
 	else if(r_out != 0) //if we will redirect output to a file (instead of a pipe or terminal)
 	{
-		//int flags = O_WRONLY | O_CREAT | O_TRUNC;
-		printf("Will print out to file\n");
-		output_file_fd = open(holder.redirect_out, O_WRONLY|O_CREAT|O_TRUNC);
+		int flags = O_WRONLY | O_CREAT;
+		if(r_app) //if we also need to append to the file
+		{
+			flags = flags | O_APPEND;
+		}
+			
+		output_file_fd = open(holder.redirect_out, flags);
 		if(output_file_fd == -1) //if we failed to open output file
 		{
 			printf("ERROR: Unable to open file %s",holder.redirect_out);
@@ -346,7 +350,6 @@ void create_process(CommandHolder holder) {
 	}
 	if(r_in != 0 && p_in == 0) //if we are reading input from a file, not pipe (which takes higher precedence than file)
 	{
-		printf("Will read from file\n");
 		input_file_fd = open(holder.redirect_in, O_RDONLY);
 		if(input_file_fd == -1) //we failed to open input file
 		{
