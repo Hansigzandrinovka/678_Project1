@@ -10,6 +10,7 @@
 #include "execute.h"
 
 #include <stdio.h>
+#include <fcntl.h> //used for accessing constants associated with open(file id, ALL_IMPORTANT_PARAMETER_FLAGS);
 
 #include "quash.h"
 
@@ -40,7 +41,7 @@ char* get_current_directory(bool* should_free) {
   //printf(current_dir);
 
   // Change this to true if necessary
-  *should_free = false; //for memory leak issues
+  *should_free = true; //for memory leak issues
 
 //don't use system variable for current directory directly, but can grab system call to it
   return get_current_dir_name();
@@ -161,8 +162,6 @@ void run_cd(CDCommand cmd) {
     perror("ERROR: Failed to resolve path");
     return;
   }
-  /*TODO: remove this later*/else
-    printf("New Directory will be %s",dir); 
 
   int chdir_err_no = chdir(dir);
 
@@ -321,16 +320,39 @@ void parent_run_command(Command cmd) {
  * @sa Command CommandHolder
  */
 void create_process(CommandHolder holder) {
- bool p_in  = holder.flags & PIPE_IN; //tells us if this process reads from a pipe
+	bool p_in  = holder.flags & PIPE_IN; //tells us if this process reads from a pipe
 	bool p_out = holder.flags & PIPE_OUT; //tells us if this process writes to a pipe
 	bool r_in  = holder.flags & REDIRECT_IN; //tells us if output from another process redirects into this process's input
 	bool r_out = holder.flags & REDIRECT_OUT;
 	bool r_app = holder.flags & REDIRECT_APPEND; // This can only be true if r_out
+	int input_file_fd = 0; //the file descriptor for the input file, will be always 0 unless r_in is true
+	int output_file_fd = 0; //the file desciptor for the output file, ^^^^^^^^^^^^^^^^^^^^^^ r_out is true
 													// is true
 	  // TODO: Setup pipes, redirects and new process
 
 	if (p_out) { //we need to create a new pipe to write info to (in child process)
 		pipe (pipes_c_p[write_to_pipe_index_c_p]);
+	}
+	else if(r_out != 0) //if we will redirect output to a file (instead of a pipe or terminal)
+	{
+		//int flags = O_WRONLY | O_CREAT | O_TRUNC;
+		printf("Will print out to file\n");
+		output_file_fd = open(holder.redirect_out, O_WRONLY|O_CREAT|O_TRUNC);
+		if(output_file_fd == -1) //if we failed to open output file
+		{
+			printf("ERROR: Unable to open file %s",holder.redirect_out);
+			return;
+		}
+	}
+	if(r_in != 0 && p_in == 0) //if we are reading input from a file, not pipe (which takes higher precedence than file)
+	{
+		printf("Will read from file\n");
+		input_file_fd = open(holder.redirect_in, O_RDONLY);
+		if(input_file_fd == -1) //we failed to open input file
+		{
+			printf("ERROR: Unable to open file %s",holder.redirect_in);
+			return;
+		}
 	}
 
 	//the actual RUN-COMMAND part
@@ -343,10 +365,19 @@ void create_process(CommandHolder holder) {
 			  //for the current read pipe: forward terminal input requests to read from the output of pipe
 			  close(pipes_c_p[read_from_pipe_index_c_p][1]); //we won't be writing to old read-pipe
 		  }
+		  else if(r_in != 0) //if we want to read in from file
+		  {
+			  dup2(input_file_fd,STDIN_FILENO); //input to process redirected to file
+		  }
+		  
 
 		  if(p_out != 0) //if we need to write to new pipe
 		  {
 			  dup2(pipes_c_p[write_to_pipe_index_c_p][1],STDOUT_FILENO); //redirect process output to write to input of pipe
+		  }
+		  else if(r_out != 0) //writing to file, not pipe or terminal
+		  {
+			  dup2(output_file_fd,STDOUT_FILENO);//redirect process output to write to file
 		  }
 			//if is EXPORT, CD, KILL then
 		child_run_command(holder.cmd); // This should be done in the child branch of a fork
@@ -357,6 +388,14 @@ void create_process(CommandHolder holder) {
 		if(p_out != 0) //if we created an output pipe earlier, close it so it doesn't stall
 			close(pipes_c_p[write_to_pipe_index_c_p][1]); //we won't be writing to this pipe in parent
 		//IF is GENERIC, ECHO, PWD, JOBS, then
+		else if(r_out != 0) //we opened file, but won't use in parent
+		{
+			close(output_file_fd);
+		}
+		if(r_in != 0)
+		{
+			close(input_file_fd);
+		}
 
 		//swap the pipes: THE FIRST IS THE LAST AND THE LAST THE FIRST
 		read_from_pipe_index_c_p = (read_from_pipe_index_c_p + 1) % 2; //basically, alternate between 0 and 1
